@@ -1,0 +1,78 @@
+---
+###
+### GitHub Workflow - Publish gists to fsg-gitbot account
+###
+concurrency:
+  group: ${{ github.ref }}-${{ github.workflow }}
+  cancel-in-progress: false
+
+name: Publish FSG geofeed
+run-name: ${{ github.actor }} is pushing an updated geofeed to gist 🚀
+
+# Only run on update of geofeed or the gist file and when a PR is closed
+# Note: You must use `if: github.event.pull_request.merged == 'true'` in each
+# job or PR's that are rejected or closed without merging will still trigger
+on:
+  pull_request:
+    types: [closed]
+    paths:
+      - ".github/workflows/publish-gist.yml"
+      - ".field-au-geo-feed.csv
+
+jobs:
+  check_changed:
+    runs-on: 'ubuntu-latest'
+    # Declare outputs for each check
+    outputs:
+      check_changed: ${{ steps.check_changed.outputs.key_changed }}
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        # Checkout as many commits as needed for the diff
+        fetch-depth: 2
+    - shell: bash
+      id: check_file_changed
+      run: |
+        # Get the file names that have changed from the previous commit
+        CHANGED=($(git log -m -1 --name-only --pretty="format:"))
+        echo "Number of files changed: ${#CHANGED[@]}"
+        echo
+        # Make sure there are files changed
+        if [ "${#CHANGED[@]}" -eq 0 ]; then
+            echo "No files changed."
+        else
+            # Export changed files to $GITHUB_ENV
+            for FILE in "${CHANGED[@]}"; do
+                echo "File changed: $FILE"
+                echo "GITHUB_ENV: $(cat $GITHUB_ENV)"
+                echo "GITHUB_OUTPUT: $(cat $GITHUB_OUTPUT)"
+            done
+        fi
+
+
+  publish_public_keys:
+    if: |
+      github.event.pull_request.merged == true ||
+      #github.steps.check_changed.outputs.keys_fsg_pkeys_list_pub == true
+    needs: [ check_changed ]
+    name: fsg-geofeed.pub
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      # Sync fsg-pkeys-list.pub to gist
+      - name: Sync fsg-geofeed to gist
+        uses: popsiclestick/gist-sync-action@v1.2.0
+        id: push-geofeed
+        with:
+          # Auth token with gist permissions
+          auth: ${{ secrets.GITBOT_LEGACY_TOKEN }}
+          # URL of the gist
+          gist_url: https://gist.github.com/xxx
+          # Title of the gist
+          gist_title: fsg-geofeed.pub
+          # Description of the gist
+          gist_description: Public Keys
+          # The Filename with the contents we want to mirror
+          github_file: ./field-au-geo-feed.csv
